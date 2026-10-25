@@ -1,0 +1,9 @@
+== baseline: 40s at 10.0 requests/s per protocol ==  (started 06:08:00)
+== fault (+300 ms): 40s at 10.0 requests/s per protocol ==  (started 06:08:40)
+== recovery: 30s at 10.0 requests/s per protocol ==  (started 06:09:20)
+
+sent (status counts):
+  grpc INVALID_ARGUMENT        214
+  grpc OK                      886
+  http 201                     886
+  http 400                     214

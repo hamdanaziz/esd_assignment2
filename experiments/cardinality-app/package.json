@@ -1,0 +1,10 @@
+{
+  "name": "cardinality-demo",
+  "version": "1.0.0",
+  "description": "Standalone test app used only for the Part E.2 cardinality-explosion experiment",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "prom-client": "^15.1.3"
+  }
+}

@@ -1,0 +1,5 @@
+One caller, one correlation id (corr-shared-42), sent to BOTH protocols:
+06:10:17.261 quickbite-api   corr-shared-42 | order placed {'orderId': 'o_ed09cde94e4d'}
+06:10:17.262 quickbite-api   corr-shared-42 | request completed {'statusCode': 201}
+06:10:17.373 quickbite-grpc  corr-shared-42 | order placed {'orderId': 'o_bbd96845adea'}
+06:10:17.373 quickbite-grpc  corr-shared-42 | grpc call completed {'grpcCode': 'OK'}

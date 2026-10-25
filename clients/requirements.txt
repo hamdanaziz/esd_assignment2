@@ -1,0 +1,10 @@
+# The generated stubs in clients/generated/ were produced by grpcio-tools 1.84.0
+# and check at import time that the installed grpcio is at least that version.
+requests>=2.31
+grpcio==1.84.0
+grpcio-tools==1.84.0
+protobuf>=5.29
+pyyaml>=6.0
+openapi-spec-validator>=0.7
+jsonschema>=4.20
+openapi-core>=0.19

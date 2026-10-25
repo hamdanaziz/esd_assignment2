@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 5s        # scrape every 5s so short experiments still get several data points
+  evaluation_interval: 5s
+
+scrape_configs:
+  # QuickBite HTTP service - business + HTTP metrics
+  - job_name: 'quickbite-api'
+    static_configs:
+      - targets: ['app:3000']
+        labels:
+          service: 'quickbite-api'
+
+  # Assignment 2: QuickBite gRPC service - RPC metrics (grpc_server_*), plus the
+  # shared business/DB metrics (orders_total, db_query_duration_seconds, ...)
+  - job_name: 'quickbite-grpc'
+    static_configs:
+      - targets: ['grpc-service:9464']
+        labels:
+          service: 'quickbite-grpc'
+
+  # Host machine resource metrics (CPU, memory, disk, network)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          machine: 'quickbite-dev-host'   # name the machine being measured
+
+  # Prometheus scraping itself (useful sanity check)
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Part E.2 cardinality-explosion demo app. Only reachable while the
+  # `cardinality-demo` container is running (see experiments/ profile);
+  # Prometheus just marks this target "down" the rest of the time, which
+  # is harmless.
+  - job_name: 'cardinality-demo'
+    static_configs:
+      - targets: ['cardinality-demo:9091']

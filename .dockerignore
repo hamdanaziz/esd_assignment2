@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+.git
+logs
+*.log
+REPORT.pdf
+docs
+experiments
+clients
+tests
+grafana
+prometheus
+filebeat

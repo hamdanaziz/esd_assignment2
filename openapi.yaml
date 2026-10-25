@@ -1,0 +1,326 @@
+openapi: 3.0.3
+info:
+  title: QuickBite Orders API
+  version: 2.0.0
+  description: |
+    HTTP API for placing and tracking food orders.
+
+    * Every error uses the same `Error` shape.
+    * `POST /orders` accepts an optional `Idempotency-Key` header so a client can safely retry.
+    * `GET /orders` is rate limited to 10 requests per 10 seconds per client IP.
+    * Operational endpoints (`/health`, `/metrics`) and the `/admin/fault` test hook are intentionally not part of this contract.
+servers:
+  - url: http://localhost:3000
+    description: Local docker compose stack
+tags:
+  - name: orders
+paths:
+  /orders:
+    post:
+      tags: [orders]
+      operationId: placeOrder
+      summary: Place a new order
+      description: |
+        Creates an order in status `placed`. Send an `Idempotency-Key` to make retries safe:
+        repeating the request with the same key and the same body returns the original order
+        (with header `Idempotent-Replayed: true`) instead of creating a second one. Re-using a
+        key with a different body is rejected with 422.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOrder'
+            example:
+              customerRef: cust_42
+              items:
+                - { name: Zinger Burger, price: 5.5, qty: 2 }
+      responses:
+        '201':
+          description: Order created (or the stored result of an earlier identical request).
+          headers:
+            Location:
+              description: URL of the created order.
+              schema: { type: string, example: /orders/o_1c82fc9b116c }
+            Idempotent-Replayed:
+              description: Present with value `true` when the response is a replay of an earlier request with the same Idempotency-Key.
+              schema: { type: string, enum: ['true'] }
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          description: The Idempotency-Key was already used with a different request body. 
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error:
+                  code: IDEMPOTENCY_KEY_REUSED
+                  message: this idempotency key was already used with a different request body
+                  requestId: 0b7d2c1e-1f0a-4e7b-8d3a-6a2f4c9e1b11
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      tags: [orders]
+      operationId: listOrders
+      summary: List orders (paginated, rate limited)
+      description: |
+        Newest first. **Rate limit:** 10 requests per 10-second window, shared by all callers with the
+        same client IP. Over the limit the API answers `429` with a `Retry-After` header (seconds until
+        the window ends and calls are allowed again).
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: A page of orders.
+          headers:
+            RateLimit-Limit: { schema: { type: integer }, description: Requests allowed per window. }
+            RateLimit-Remaining: { schema: { type: integer }, description: Requests left in the current window. }
+            RateLimit-Reset: { schema: { type: integer }, description: Seconds until the window resets. }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Fetch one order
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      tags: [orders]
+      operationId: changeOrderStatus
+      summary: Mark an order ready or cancel it
+      description: |
+        Allowed transitions: `placed -> ready` and `placed -> cancelled`.
+        Repeating a transition that already happened is a no-op and returns `200`
+        (safe to retry). Asking for a different transition from a finished order returns `409`.
+        Replaces the old `POST /orders/{id}/ready` and `POST /orders/{id}/cancel`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatusChange' }
+            example: { status: ready }
+      responses:
+        '200':
+          description: The order after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The order is in a state that does not allow this transition.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error:
+                  code: CONFLICT
+                  message: order is ready, cannot change to cancelled
+                  requestId: 6bde216e-8077-4995-b7a6-bd37590c42af
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 'Client-chosen unique key (1-128 chars of letters, digits, _ . : - ; a UUID works well). Same key + same body = same order.'
+      schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Correlation id (max 64 chars). Echoed back and written to every log line for this request.
+      schema: { type: string, maxLength: 64 }
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^o_[a-f0-9]{12}$', example: o_1c82fc9b116c }
+  headers:
+    XRequestId:
+      description: Correlation id of this request.
+      schema: { type: string }
+  schemas:
+    OrderStatus:
+      type: string
+      enum: [placed, ready, cancelled]
+    OrderItem:
+      type: object
+      required: [name, price, qty]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        price: { type: number, exclusiveMinimum: true, minimum: 0, maximum: 10000 }
+        qty: { type: integer, minimum: 1, maximum: 99 }
+    NewOrder:
+      type: object
+      required: [items]
+      properties:
+        customerRef:
+          type: string
+          pattern: '^[A-Za-z0-9_.-]{1,64}$'
+          description: Pseudonymous reference such as `cust_42`. Never a real name. Defaults to `anonymous`.
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/OrderItem' }
+    Order:
+      type: object
+      required: [id, customerRef, items, amount, status, placedAt, readyAt]
+      properties:
+        id: { type: string, example: o_1c82fc9b116c }
+        customerRef: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        amount: { type: number, description: Order total in currency units. }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        placedAt: { type: string, format: date-time }
+        readyAt: { type: string, format: date-time, nullable: true }
+    OrderList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Order' }
+        pagination:
+          type: object
+          required: [limit, offset, total]
+          properties:
+            limit: { type: integer }
+            offset: { type: integer }
+            total: { type: integer, description: Number of orders matching the filter. }
+    StatusChange:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ready, cancelled]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code.
+              enum:
+                - VALIDATION_ERROR
+                - INVALID_JSON
+                - NOT_FOUND
+                - CONFLICT
+                - IDEMPOTENCY_KEY_REUSED
+                - RATE_LIMITED
+                - PAYLOAD_TOO_LARGE
+                - DEPENDENCY_UNAVAILABLE
+                - SERVICE_UNAVAILABLE
+                - INTERNAL_ERROR
+            message: { type: string }
+            requestId: { type: string }
+            details:
+              type: array
+              description: Per-field problems (validation errors only).
+              items:
+                type: object
+                required: [field, issue]
+                properties:
+                  field: { type: string, example: 'items[0].qty' }
+                  issue: { type: string }
+            retryAfterSeconds:
+              type: integer
+              description: Only on 429; same value as the Retry-After header.
+  responses:
+    BadRequest:
+      description: Malformed JSON or invalid input.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: request validation failed
+              details:
+                - { field: 'items[0].qty', issue: must be an integer between 1 and 99 }
+              requestId: 91f8bf7c-f769-4e0c-832b-7835bf5be56c
+    NotFound:
+      description: No such order.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error: { code: NOT_FOUND, message: order not found, requestId: 85d8a3aa-4a99-4f0f-95b3-4c3a1f575227 }
+    PayloadTooLarge:
+      description: Request body larger than 100 kB.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before calling again.
+          schema: { type: integer, example: 7 }
+        RateLimit-Limit: { schema: { type: integer } }
+        RateLimit-Remaining: { schema: { type: integer } }
+        RateLimit-Reset: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: RATE_LIMITED
+              message: 'rate limit exceeded: 10 requests per 10s; retry after 7s'
+              requestId: 2d31b263-d0a1-4414-9b93-3ba9ea224ab2
+              retryAfterSeconds: 7
+    Unavailable:
+      description: The service or its database is temporarily unavailable. Safe to retry (use an Idempotency-Key for POST).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

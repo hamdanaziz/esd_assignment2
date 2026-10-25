@@ -1,0 +1,20 @@
+request  1: HTTP 200  RateLimit-Limit=10 Remaining=9 Reset=10s
+request  2: HTTP 200  RateLimit-Limit=10 Remaining=8 Reset=10s
+request  3: HTTP 200  RateLimit-Limit=10 Remaining=7 Reset=10s
+request  4: HTTP 200  RateLimit-Limit=10 Remaining=6 Reset=10s
+request  5: HTTP 200  RateLimit-Limit=10 Remaining=5 Reset=10s
+request  6: HTTP 200  RateLimit-Limit=10 Remaining=4 Reset=10s
+request  7: HTTP 200  RateLimit-Limit=10 Remaining=3 Reset=10s
+request  8: HTTP 200  RateLimit-Limit=10 Remaining=2 Reset=10s
+request  9: HTTP 200  RateLimit-Limit=10 Remaining=1 Reset=10s
+request 10: HTTP 200  RateLimit-Limit=10 Remaining=0 Reset=10s
+request 11: HTTP 429  RateLimit-Limit=10 Remaining=0 Reset=10s Retry-After=10s
+request 12: HTTP 429  RateLimit-Limit=10 Remaining=0 Reset=10s Retry-After=10s
+request 13: HTTP 429  RateLimit-Limit=10 Remaining=0 Reset=10s Retry-After=10s
+
+429 body: {"error":{"code":"RATE_LIMITED","message":"rate limit exceeded: 10 requests per 10s; retry after 10s","requestId":"fd65591d-4c64-4824-b93a-d9e9da34b7ec","retryAfterSeconds":10}}
+
+sleeping 10s (the Retry-After value) ...
+
+request 14: HTTP 200  RateLimit-Limit=10 Remaining=9 Reset=10s
+request 15: HTTP 200  RateLimit-Limit=10 Remaining=8 Reset=10s

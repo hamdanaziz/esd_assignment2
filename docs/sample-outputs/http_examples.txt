@@ -1,0 +1,26 @@
+$ curl -i -X POST localhost:3000/orders ... (SUCCESS)
+HTTP/1.1 201 Created
+X-Request-ID: corr-demo-001
+Location: /orders/o_3b0093618066
+Content-Type: application/json; charset=utf-8
+
+{"id":"o_3b0093618066","customerRef":"cust_42","items":[{"qty":2,"name":"Zinger Burger","price":5.5},{"qty":1,"name":"Fries","price":2}],"amount":13,"status":"placed","placedAt":"2026-10-20T06:10:12.183Z","readyAt":null}
+
+
+$ curl -i -X POST localhost:3000/orders ... (FAILURE: invalid input)
+HTTP/1.1 400 Bad Request
+X-Request-ID: corr-demo-002
+Content-Type: application/json; charset=utf-8
+
+{"error":{"code":"VALIDATION_ERROR","message":"request validation failed","details":[{"field":"items[0].name","issue":"must be a non-empty string (max 100 chars)"},{"field":"items[0].price","issue":"must be a number greater than 0 and at most 10000"},{"field":"items[0].qty","issue":"must be an integer between 1 and 99"}],"requestId":"corr-demo-002"}}
+
+
+$ repeat the SUCCESS request with the same Idempotency-Key
+HTTP/1.1 201 Created
+X-Request-ID: corr-demo-003
+Idempotent-Replayed: true
+Location: /orders/o_3b0093618066
+Content-Type: application/json; charset=utf-8
+
+{"id":"o_3b0093618066","customerRef":"cust_42","items":[{"qty":2,"name":"Zinger Burger","price":5.5},{"qty":1,"name":"Fries","price":2}],"amount":13,"status":"placed","placedAt":"2026-10-20T06:10:12.183Z","readyAt":null}
+

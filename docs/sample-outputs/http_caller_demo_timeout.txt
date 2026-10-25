@@ -1,0 +1,57 @@
+settings: timeout=1.0s max_retries=2 (<=3 attempts) backoff=0.2s*2^n+jitter breaker=open after 3 failed calls, recovery=6.0s, outage mode=timeout
+
+== Phase 1: healthy server ==
+[call 1] place order
+    attempt 1/3: HTTP 201 -> success [key=d7c13e79 request_id=caller-feffca7d]
+[call 1] result: HTTP 201 order=o_24362b0d87e9
+[call 2] place order
+    attempt 1/3: HTTP 201 -> success [key=89b19bb7 request_id=caller-2871195a]
+[call 2] result: HTTP 201 order=o_38e16dd09ba2
+
+== Phase 2: two transient failures, then the server recovers -> RETRY succeeds ==
+[call 3] place order (first 2 attempts will fail)
+    attempt 1/3: TIMEOUT after 1.0s -> retry in 0.24s (same Idempotency-Key)
+    attempt 2/3: TIMEOUT after 1.0s -> retry in 0.47s (same Idempotency-Key)
+    attempt 3/3: HTTP 201 (Idempotent-Replayed: true) -> success [key=391e427c request_id=caller-8a754ef2]
+[call 3] result: HTTP 201 order=o_5a21cec1d135
+
+== Phase 3: sustained outage -> failed calls pile up -> BREAKER OPENS ==
+[call 4] place order (server is down)
+    attempt 1/3: TIMEOUT after 1.0s -> retry in 0.24s (same Idempotency-Key)
+    attempt 2/3: TIMEOUT after 1.0s -> retry in 0.47s (same Idempotency-Key)
+    attempt 3/3: TIMEOUT after 1.0s -> out of retries, call FAILED
+[call 4] result: FAILED (call failed after 3 attempts: TIMEOUT after 1.0s)
+[call 5] place order (server is down)
+    attempt 1/3: TIMEOUT after 1.0s -> retry in 0.23s (same Idempotency-Key)
+    attempt 2/3: TIMEOUT after 1.0s -> retry in 0.45s (same Idempotency-Key)
+    attempt 3/3: TIMEOUT after 1.0s -> out of retries, call FAILED
+[call 5] result: FAILED (call failed after 3 attempts: TIMEOUT after 1.0s)
+[call 6] place order (server is down)
+    attempt 1/3: TIMEOUT after 1.0s -> retry in 0.26s (same Idempotency-Key)
+    attempt 2/3: TIMEOUT after 1.0s -> retry in 0.46s (same Idempotency-Key)
+    attempt 3/3: TIMEOUT after 1.0s -> out of retries, call FAILED
+    *** BREAKER closed -> open
+[call 6] result: FAILED (call failed after 3 attempts: TIMEOUT after 1.0s)
+-- breaker is open: next calls must not reach the network --
+[call 7] place order (breaker open)
+    attempt 1: BLOCKED by open circuit breaker (no network call; retry in 6.0s)
+[call 7] result: fast-fail, circuit open, retry in 6.0s
+[call 8] place order (breaker open)
+    attempt 1: BLOCKED by open circuit breaker (no network call; retry in 6.0s)
+[call 8] result: fast-fail, circuit open, retry in 6.0s
+
+== Phase 4: server fixed; wait for recovery period, then HALF-OPEN trial ==
+(waiting 6.2s for the recovery timeout)
+[call 9] trial call in half-open state
+    *** BREAKER open -> half-open
+    *** BREAKER half-open -> closed
+    attempt 1/3: HTTP 201 -> success [key=ae339d15 request_id=caller-a165f65d]
+[call 9] result: HTTP 201 order=o_837cd70f66d5
+[call 10] place order (breaker closed again)
+    attempt 1/3: HTTP 201 -> success [key=08870dbc request_id=caller-caaaee61]
+[call 10] result: HTTP 201 order=o_d3515d9a865f
+[call 11] place order (breaker closed again)
+    attempt 1/3: HTTP 201 -> success [key=0b76cf9e request_id=caller-5b005466]
+[call 11] result: HTTP 201 order=o_3ab635ff3ab5
+
+demo finished; breaker state: closed

@@ -1,0 +1,441 @@
+{
+  "title": "QuickBite - Observability",
+  "uid": "quickbite-main",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Orders by outcome (placed / ready / cancelled, rate/min)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(orders_total[5m]) * 60)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "description": "Business counter: orders_total, labeled by outcome (placed/cancelled)."
+    },
+    {
+      "id": 2,
+      "title": "Orders pending (waiting to be prepared)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "orders_pending",
+          "legendFormat": "pending"
+        }
+      ],
+      "description": "Business gauge: orders_pending. Rises when an order is placed, falls when marked ready or cancelled."
+    },
+    {
+      "id": 3,
+      "title": "Order kitchen time - avg & p95/p99 (Summary)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "order_processing_seconds_sum / order_processing_seconds_count",
+          "legendFormat": "average"
+        },
+        {
+          "expr": "order_processing_seconds{quantile=\"0.95\"}",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "order_processing_seconds{quantile=\"0.99\"}",
+          "legendFormat": "p99"
+        }
+      ],
+      "description": "Business summary: order_processing_seconds. Client-side quantiles from prom-client, plus the average computed from _sum/_count."
+    },
+    {
+      "id": 4,
+      "title": "HTTP request latency - p95/p99 (Histogram)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{route}}"
+        }
+      ],
+      "description": "Application histogram: http_request_duration_seconds. This is the chart that moves during the fault-injection experiment (Part E.1)."
+    },
+    {
+      "id": 5,
+      "title": "Failed requests (5xx) rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx/sec"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{status_code=~\"4..\"}[5m]))",
+          "legendFormat": "4xx/sec"
+        }
+      ],
+      "description": "Application counter: http_requests_total, filtered to error status codes."
+    },
+    {
+      "id": 6,
+      "title": "Active Prometheus time series (cardinality demo)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "count(demo_requests_total)",
+          "legendFormat": "demo_requests_total series count"
+        }
+      ],
+      "description": "Used for Part E.2 - watch this climb as experiments/cardinality_test.js adds a new request_id label value per call."
+    },
+    {
+      "id": 7,
+      "title": "Host CPU usage %",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "description": "Node Exporter, machine: quickbite-dev-host."
+    },
+    {
+      "id": 8,
+      "title": "Host memory used %",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "description": "Node Exporter, machine: quickbite-dev-host."
+    },
+    {
+      "id": 9,
+      "title": "Host disk + network",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "100 - ((node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100)",
+          "legendFormat": "disk used % {{instance}}"
+        },
+        {
+          "expr": "rate(node_network_receive_bytes_total{device!=\"lo\"}[5m])",
+          "legendFormat": "rx bytes/s {{device}}"
+        }
+      ],
+      "description": "Node Exporter, machine: quickbite-dev-host."
+    },
+    {
+      "id": 30,
+      "title": "Assignment 2 - PlaceOrder over HTTP vs gRPC",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "title": "HTTP: POST /orders calls per second, by status code",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "sum by (status_code) (rate(http_requests_total{route=\"/orders\",method=\"POST\"}[1m]))",
+          "legendFormat": "{{status_code}}"
+        }
+      ],
+      "description": "Call rate of the HTTP version of PlaceOrder, split by HTTP status. 201 = created, 400 = validation, 422 = idempotency key reused, 503 = injected/real failure.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "gRPC: PlaceOrder calls per second, by RPC method and status",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "sum by (grpc_method, grpc_code) (rate(grpc_server_handled_total[1m]))",
+          "legendFormat": "{{grpc_method}} {{grpc_code}}"
+        }
+      ],
+      "description": "Server-side call rate of the gRPC version, split by RPC method and gRPC status code. OK = success, INVALID_ARGUMENT = validation, FAILED_PRECONDITION = idempotency key reused.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "title": "Error rate % - HTTP (non-2xx) vs gRPC (non-OK)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(http_requests_total{route=\"/orders\",method=\"POST\",status_code!~\"2..\"}[1m])) / sum(rate(http_requests_total{route=\"/orders\",method=\"POST\"}[1m]))",
+          "legendFormat": "HTTP non-2xx %"
+        },
+        {
+          "expr": "100 * sum(rate(grpc_server_handled_total{grpc_code!=\"OK\"}[1m])) / sum(rate(grpc_server_handled_total[1m]))",
+          "legendFormat": "gRPC non-OK %"
+        },
+        {
+          "expr": "100 * sum(rate(http_requests_total{route=\"/orders\",method=\"POST\",status_code=~\"5..\"}[1m])) / sum(rate(http_requests_total{route=\"/orders\",method=\"POST\"}[1m]))",
+          "legendFormat": "HTTP 5xx % (server fault)"
+        },
+        {
+          "expr": "100 * sum(rate(grpc_server_handled_total{grpc_code=~\"INTERNAL|UNAVAILABLE|UNKNOWN|DATA_LOSS\"}[1m])) / sum(rate(grpc_server_handled_total[1m]))",
+          "legendFormat": "gRPC server-fault %"
+        }
+      ],
+      "description": "Error ratio over a 1-minute window. 'non-2xx / non-OK' includes caller mistakes (validation); the 5xx / INTERNAL+UNAVAILABLE lines show only server faults.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "title": "Latency p50 / p95 - HTTP vs gRPC (1 min rate window)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket{route=\"/orders\",method=\"POST\"}[1m])))",
+          "legendFormat": "HTTP p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{route=\"/orders\",method=\"POST\"}[1m])))",
+          "legendFormat": "HTTP p95"
+        },
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(grpc_server_handling_seconds_bucket{grpc_method=\"PlaceOrder\"}[1m])))",
+          "legendFormat": "gRPC p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(grpc_server_handling_seconds_bucket{grpc_method=\"PlaceOrder\"}[1m])))",
+          "legendFormat": "gRPC p95"
+        }
+      ],
+      "description": "Percentiles estimated from the histogram buckets over a trailing 1-minute window (recomputed at each 5 s scrape). Both are measured on the SERVER side. Buckets: 1 ms ... 5 s (HTTP) / 2.5 s (gRPC).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "title": "In-flight requests - HTTP (all routes) vs gRPC PlaceOrder",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
+      "targets": [
+        {
+          "expr": "sum(http_requests_in_flight)",
+          "legendFormat": "HTTP in flight"
+        },
+        {
+          "expr": "sum(grpc_server_in_flight_requests{grpc_method=\"PlaceOrder\"})",
+          "legendFormat": "gRPC in flight"
+        }
+      ],
+      "description": "Gauge of requests currently being handled. Rises when the backend slows down (see the fault phase of experiments/a2_traffic.py) - an early saturation signal that rates and averages hide. The HTTP series includes the scrape request itself (baseline of ~1).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "title": "DB query duration p95 by operation (both services)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation, job) (rate(db_query_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{job}} {{operation}}"
+        }
+      ],
+      "description": "New in A2: time spent in Postgres, recorded by shared/db.js for BOTH services. Separates 'the database is slow' from 'the service is slow'.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "title": "Business events per minute: replays, rejections, rate-limited",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 57
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(idempotent_replays_total[5m])) * 60",
+          "legendFormat": "idempotent replays"
+        },
+        {
+          "expr": "sum by (reason) (rate(orders_rejected_total[5m])) * 60",
+          "legendFormat": "rejected: {{reason}}"
+        },
+        {
+          "expr": "sum by (route) (rate(http_rate_limited_total[5m])) * 60",
+          "legendFormat": "429 rate-limited {{route}}"
+        }
+      ],
+      "description": "New in A2: retries absorbed by idempotency keys, orders rejected by business rules (bounded 'reason' label), and requests refused by the rate limiter.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "title": "Share of calls completing within 100 ms - HTTP vs gRPC",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 57
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_request_duration_seconds_bucket{route=\"/orders\",method=\"POST\",le=\"0.1\"}[1m])) / sum(rate(http_request_duration_seconds_count{route=\"/orders\",method=\"POST\"}[1m]))",
+          "legendFormat": "HTTP <= 100 ms"
+        },
+        {
+          "expr": "sum(rate(grpc_server_handling_seconds_bucket{grpc_method=\"PlaceOrder\",le=\"0.1\"}[1m])) / sum(rate(grpc_server_handling_seconds_count{grpc_method=\"PlaceOrder\"}[1m]))",
+          "legendFormat": "gRPC <= 100 ms"
+        }
+      ],
+      "description": "Reads one histogram bucket (le=0.1) as a fraction of all calls - an SLO-style view of the duration histogram.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

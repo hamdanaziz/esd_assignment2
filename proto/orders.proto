@@ -1,0 +1,39 @@
+// proto/orders.proto
+// gRPC contract for the "place an order" operation. This is the gRPC twin of
+// HTTP `POST /orders`; both end up in shared/orderService.js.
+//
+// Regenerate client stubs with:  ./scripts/gen_proto.sh
+syntax = "proto3";
+
+package quickbite.v1;
+
+service OrderService {
+  // Place a new order. Send idempotency_key to make retries safe: the same key
+  // with the same body returns the original order instead of creating another.
+  //
+  // Error codes: INVALID_ARGUMENT (bad input), FAILED_PRECONDITION (idempotency
+  // key reused with a different body), UNAVAILABLE (database down), INTERNAL.
+  rpc PlaceOrder(PlaceOrderRequest) returns (Order);
+}
+
+message OrderItem {
+  string name  = 1;
+  double price = 2; // unit price, > 0
+  int32  qty   = 3; // 1..99
+}
+
+message PlaceOrderRequest {
+  string customer_ref    = 1; // optional pseudonymous reference, e.g. "cust_42"
+  repeated OrderItem items = 2; // 1..50 items
+  string idempotency_key = 3; // optional, <= 128 chars
+}
+
+message Order {
+  string id           = 1;
+  string customer_ref = 2;
+  repeated OrderItem items = 3;
+  double amount       = 4; // total in currency units (cents / 100)
+  string status       = 5; // placed | ready | cancelled
+  string placed_at    = 6; // RFC 3339 / ISO 8601
+  bool   replayed     = 7; // true if this is a stored result returned for a repeated idempotency_key
+}

@@ -1,0 +1,211 @@
+services:
+  # ---------------- Application under observation ----------------
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: quickbite-app
+    ports:
+      - '3000:3000'
+    volumes:
+      - app-logs:/app/logs
+    environment:
+      - PORT=3000
+      - LOG_FILE=/app/logs/quickbite.log
+      - DATABASE_URL=postgres://quickbite:quickbite@postgres:5432/quickbite
+      # Rate limit for GET /orders: 10 requests per 10 s per client IP
+      - RATE_LIMIT_MAX=10
+      - RATE_LIMIT_WINDOW_MS=10000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - observability
+
+  # ---------------- Assignment 2: gRPC service (separate process/container) ----------------
+  # Same business rules (shared/orderService.js) and same database as the HTTP service.
+  grpc-service:
+    build:
+      context: .
+      dockerfile: grpc-service/Dockerfile
+    container_name: quickbite-grpc
+    ports:
+      - '50051:50051'   # gRPC
+      - '9464:9464'     # /metrics (scraped by Prometheus), /health, /admin/fault
+    volumes:
+      - app-logs:/app/logs
+    environment:
+      - GRPC_PORT=50051
+      - METRICS_PORT=9464
+      - LOG_FILE=/app/logs/quickbite-grpc.log
+      - DATABASE_URL=postgres://quickbite:quickbite@postgres:5432/quickbite
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - observability
+
+  # ---------------- Assignment 2: shared source of truth ----------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: quickbite-postgres
+    environment:
+      - POSTGRES_USER=quickbite
+      - POSTGRES_PASSWORD=quickbite
+      - POSTGRES_DB=quickbite
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U quickbite -d quickbite']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '5432:5432'
+    networks:
+      - observability
+
+  # ---------------- Assignment 2: OpenAPI viewer / "try it out" ----------------
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    container_name: quickbite-swagger-ui
+    environment:
+      - SWAGGER_JSON=/spec/openapi.yaml
+    volumes:
+      - ./openapi.yaml:/spec/openapi.yaml:ro
+    ports:
+      - '8081:8080'
+    networks:
+      - observability
+
+  # ---------------- Metrics: Prometheus + Grafana + Node Exporter ----------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: quickbite-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - '9090:9090'
+    depends_on:
+      - app
+      - grpc-service
+      - node-exporter
+    networks:
+      - observability
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: quickbite-node-exporter
+    # Read-only mounts of the host filesystem so Node Exporter reports the
+    # actual host's CPU/mem/disk/network, not just the container's.
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - '9100:9100'
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: quickbite-grafana
+    ports:
+      - '3001:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    depends_on:
+      - prometheus
+    networks:
+      - observability
+
+  # ---------------- Logs: Elasticsearch + Kibana + Filebeat ----------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    container_name: quickbite-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - '9200:9200'
+    networks:
+      - observability
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.14.3
+    container_name: quickbite-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - '5601:5601'
+    depends_on:
+      - elasticsearch
+    networks:
+      - observability
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.14.3
+    container_name: quickbite-filebeat
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - app-logs:/logs:ro
+      # Filebeat needs a registry directory it can write to, to track
+      # file offsets across restarts.
+      - filebeat-data:/usr/share/filebeat/data
+    depends_on:
+      - app
+      - grpc-service
+      - elasticsearch
+    networks:
+      - observability
+
+  # ---------------- Part E.2 helper: cardinality-explosion demo app ----------------
+  # Not started by default (`docker compose up`) - it's gated behind the
+  # 'experiments' profile. Use `docker compose ... up`, NOT `docker compose
+  # run`: `run` creates a one-off container with a randomized name and does
+  # NOT reliably get the service-name DNS alias ("cardinality-demo") that
+  # Prometheus's scrape config depends on, whereas `up` attaches it exactly
+  # like every other service here (see how prometheus/app/etc. all resolve
+  # each other by service name). LABELED is overridable from the shell:
+  #   LABELED=true  docker compose --profile experiments up -d --build cardinality-demo
+  #   LABELED=false docker compose --profile experiments up -d --build cardinality-demo
+  cardinality-demo:
+    build: ./experiments/cardinality-app
+    container_name: quickbite-cardinality-demo
+    profiles: ['experiments']
+    environment:
+      - LABELED=${LABELED:-true}
+      - PORT=9091
+    ports:
+      - '9091:9091'
+    networks:
+      - observability
+
+networks:
+  observability:
+    driver: bridge
+
+volumes:
+  pgdata:
+  app-logs:
+  prometheus-data:
+  grafana-data:
+  es-data:
+  filebeat-data:

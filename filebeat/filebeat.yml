@@ -1,0 +1,55 @@
+# filebeat.yml
+# Reads QuickBite's JSON log file (mounted from the app container via a
+# shared volume) and ships parsed events straight to Elasticsearch.
+# We skip Logstash - it's optional per the assignment - because our app
+# already writes structured JSON, so Filebeat's json decoder is enough.
+
+filebeat.inputs:
+  - type: filestream
+    id: quickbite-app-logs
+    paths:
+      # A2: both services write JSON logs into the shared volume:
+      #   quickbite.log       (HTTP service,  app_name=quickbite-api)
+      #   quickbite-grpc.log  (gRPC service,  app_name=quickbite-grpc)
+      - /logs/*.log
+    parsers:
+      - ndjson:
+          # Each line is one JSON object -> decode it and promote its
+          # keys (timestamp, level, service, message, requestId, ...)
+          # to top-level fields instead of nesting them under "message".
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+    fields:
+      log_source: quickbite
+    fields_under_root: true
+
+# Map our app's own "timestamp" field to Filebeat/Elasticsearch's
+# @timestamp so Kibana's time picker works against event time, not
+# ingest time.
+processors:
+  - timestamp:
+      field: timestamp
+      layouts:
+        - '2006-01-02T15:04:05.000Z'
+      test:
+        - '2026-09-20T10:00:00.000Z'
+  - drop_fields:
+      fields: ['agent', 'ecs', 'input', 'log.offset']
+      ignore_missing: true
+
+output.elasticsearch:
+  hosts: ['http://elasticsearch:9200']
+  index: 'quickbite-logs-%{+yyyy.MM.dd}'
+
+setup.ilm.enabled: false
+setup.template.enabled: true
+setup.template.name: 'quickbite-logs'
+setup.template.pattern: 'quickbite-logs-*'
+
+# Keep Elasticsearch happy without a Kibana dashboard setup step; we
+# create the index pattern manually in Kibana (see README).
+setup.kibana:
+  host: 'http://kibana:5601'
+
+logging.level: info

@@ -1,0 +1,19 @@
+$ python clients/grpc_client.py --customer cust_42 --item "Zinger Burger:5.5:2" --item "Fries:2:1" --request-id corr-demo-101   (SUCCESS)
+request_id : corr-demo-101
+deadline   : 2.0s   elapsed: 10.5 ms
+grpc status: OK (0)
+order      : id=o_4699c503a023 status=placed amount=13.0 replayed=False
+             items=[('Zinger Burger', 5.5, 2), ('Fries', 2.0, 1)]
+
+$ python clients/grpc_client.py --item ":0:0" --request-id corr-demo-102   (FAILURE: invalid input)
+request_id : corr-demo-102
+deadline   : 2.0s   elapsed: 7.3 ms
+grpc status: INVALID_ARGUMENT (3)
+details    : request validation failed (items[0].name: must be a non-empty string (max 100 chars); items[0].price: must be a number greater than 0 and at most 10000; items[0].qty: must be an integer between 1 and 99)
+error code : VALIDATION_ERROR
+
+$ python clients/grpc_client.py --item "Fries:2:1" --deadline 0.001   (FAILURE: deadline)
+request_id : corr-demo-103
+deadline   : 0.001s   elapsed: 4.8 ms
+grpc status: DEADLINE_EXCEEDED (4)
+details    : Deadline Exceeded
